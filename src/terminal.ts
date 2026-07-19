@@ -1,6 +1,7 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -76,8 +77,39 @@ export async function attachTerminal(
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon());
+  // 클립보드 복사: 선택 텍스트를 OS 클립보드로 write 해주는 addon.
+  // disableStdin:true 라 키보드 입력은 막혀있으므로, 아래 keydown 핸들러로
+  // Ctrl+C 를 따로 잡아 선택 텍스트를 복사한다.
+  term.loadAddon(new ClipboardAddon());
   term.open(container);
   fit.fit();
+
+  // --- 복사 처리 ---
+  // disableStdin 모드라 term.onData 가 안 오고, 일반 Ctrl+C 도 인터럽트로
+  // 빠져버리므로 컨테이너 단에서 keydown 을 잡아 직접 복사한다.
+  const onKeydown = (e: KeyboardEvent) => {
+    // Ctrl+C / Ctrl+Insert: 선택 영역 있으면 클립보드로 복사.
+    if ((e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "Insert"))
+        || (e.ctrlKey && e.shiftKey && (e.key === "c" || e.key === "C"))) {
+      const sel = term.getSelection();
+      if (sel) {
+        e.preventDefault();
+        navigator.clipboard?.writeText(sel).catch(() => {});
+      }
+    }
+    // Ctrl+A: 전체 선택.
+    if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+      e.preventDefault();
+      term.selectAll();
+    }
+  };
+  container.addEventListener("keydown", onKeydown);
+
+  // 컨테이너가 포커스를 받을 수 있게 (keydown 리스너가 동작하려면 필요).
+  // tabindex 가 없으면 div 는 포커스를 안 받는다.
+  if (!container.hasAttribute("tabindex")) {
+    container.setAttribute("tabindex", "0");
+  }
 
   // stream-json user 메시지 래핑 전송
   const send = (text: string) => {
@@ -159,6 +191,7 @@ export async function attachTerminal(
     send,
     dispose: () => {
       ro.disconnect();
+      container.removeEventListener("keydown", onKeydown);
       unlistenEvent();
       unlistenLog();
       unlistenExit();
