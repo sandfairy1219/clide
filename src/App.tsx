@@ -64,7 +64,7 @@ function App() {
   return (
     <div className="app">
       <header className="app__bar">
-        <span className="app__title">betterui</span>
+        <span className="app__title">clide</span>
         <span className="app__badge" title="model">● {MODEL}</span>
         <span className="app__spacer" />
         <span className="app__session">{SESSION_ID.slice(0, 8)}</span>

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
 /// claude 실행기. 기본은 ocgo(OpenCode Go)로 claude를 띄운다.
-/// 환경변수 BETTERUI_BIN / BETTERUI_MODEL / BETTERUI_YES 로 오버라이드 가능.
+/// 환경변수 CLIDE_BIN / CLIDE_MODEL / CLIDE_YES 로 오버라이드 가능.
 const OCGO_BIN: &str = "C:\\Users\\lol\\go\\bin\\ocgo.exe";
 const DEFAULT_MODEL: &str = "glm-5.2";
 
@@ -72,9 +72,9 @@ pub fn pty_spawn(
         .try_clone_reader()
         .map_err(|e| format!("clone_reader: {e}"))?;
 
-    let ocgo_bin = std::env::var("BETTERUI_BIN").unwrap_or_else(|_| OCGO_BIN.to_string());
-    let model = std::env::var("BETTERUI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
-    let yes = std::env::var("BETTERUI_YES").map(|v| !v.is_empty()).unwrap_or(false);
+    let ocgo_bin = std::env::var("CLIDE_BIN").unwrap_or_else(|_| OCGO_BIN.to_string());
+    let model = std::env::var("CLIDE_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+    let yes = std::env::var("CLIDE_YES").map(|v| !v.is_empty()).unwrap_or(false);
 
     // ocgo launch claude --model <model> [--yes]
     let mut cmd = CommandBuilder::new(&ocgo_bin);
