@@ -68,6 +68,24 @@ function App() {
         <span className="app__title">clide</span>
         <span className="app__badge" title="model">● {MODEL}</span>
         <span className="app__spacer" />
+        <button
+          type="button"
+          className="app__copybtn"
+          onClick={() => {
+            // 포커스/키보드 타이밍 무관 — 버튼 클릭(user-gesture) → Tauri 플러그인
+            // (Rust → OS 클립보드, WebView2 우회) 로 터미널 선택 영역 복사.
+            handleRef.current?.copySelection().then((ok) => {
+              const b = document.querySelector<HTMLButtonElement>(".app__copybtn");
+              if (b) {
+                b.textContent = ok ? "복사됨 ✓" : "선택 없음";
+                setTimeout(() => (b.textContent = "복사"), 1200);
+              }
+            });
+          }}
+          title="터미널에서 드래그로 선택 후 클릭 → 클립보드로 복사"
+        >
+          복사
+        </button>
         <span className="app__session">{SESSION_ID.slice(0, 8)}</span>
       </header>
 

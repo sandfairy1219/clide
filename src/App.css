@@ -58,6 +58,22 @@ body,
   font-size: 11px;
 }
 
+/* 상단바 복사 버튼 — 터미널 선택 영역을 클립보드로.
+   포커스/키보드 타이밍 무관하게 무조건 동작하는 폴백 경로. */
+.app__copybtn {
+  border: 1px solid #2a2b3a;
+  background: #1f2335;
+  color: #c0caf5;
+  border-radius: 8px;
+  padding: 0.22em 0.7em;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.app__copybtn:hover { background: #2a2e42; border-color: #7aa2f7; }
+.app__copybtn:active { transform: translateY(1px); }
+
 /* 터미널 영역 */
 .app__terminal {
   flex: 1;

@@ -92,57 +92,74 @@ export async function attachTerminal(
   // 우클릭=복사, 그리고 외부 복사 버튼까지 3중으로 둔다.
   // navigator.clipboard 가 WebView2 에서 조용히 실패할 수 있어서,
   // 실패하면 execCommand('copy') 폴백(임시 textarea)으로 복사한다.
-  // writeClipboard — 3단계 폴백. 가장 위쪽이 WebView2 우회 경로.
-  // (1) Tauri clipboard-manager 플러그인: JS 바인딩 → Rust → OS 클립보드.
-  //     navigator.clipboard 가 WebView2 에서 secure-context/user-gesture 로
-  //     조용히 실패하는 문제를 아예 우회한다.
-  // (2) navigator.clipboard (웹 표준).
-  // (3) execCommand('copy') 임시 textarea 폴백 (user-gesture 없이도 동작).
+  // writeClipboard — 3단계 폴백.
+  // ⚠ 순서 중요: (1) execCommand('copy') 를 **동기적으로 가장 먼저** 실행.
+  //   keydown/contextmenu user-gesture 안에서 즉시 실행돼야 WebView2 가 수락.
+  //   여기서 먼저 `await` 가 들어가면(구버전에선 Tauri writeText 가 첫 줄) 제스처가
+  //   비동기로 넘어가면서 execCommand 폴백이 다 실패한다 — 이게 복사 안 된 진짜 원인.
+  // (2) Tauri clipboard-manager 플러그인: JS 바인딩 → Rust → OS 클립보드 (WebView2 우회).
+  // (3) navigator.clipboard (웹 표준).
   const writeClipboard = async (text: string): Promise<boolean> => {
+    // (1) 동기 execCommand — user-gesture 안에서 즉시 (WebView2 신뢰도 최고).
     try {
-      await writeText(text); // Tauri 플러그인 (Rust → OS)
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      ta.style.left = "-9999px";
+      ta.style.top = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (ok) return true;
+    } catch {
+      /* 폴백 */
+    }
+    // (2) Tauri 플러그인 (Rust → OS).
+    try {
+      await writeText(text);
       return true;
     } catch {
-      try {
-        await navigator.clipboard?.writeText(text);
-        return true;
-      } catch {
-        try {
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          ta.style.position = "fixed";
-          ta.style.opacity = "0";
-          ta.style.left = "-9999px";
-          document.body.appendChild(ta);
-          ta.focus();
-          ta.select();
-          const ok = document.execCommand("copy");
-          document.body.removeChild(ta);
-          return ok;
-        } catch {
-          return false;
-        }
-      }
+      /* 폴백 */
+    }
+    // (3) navigator.clipboard (웹 표준).
+    try {
+      await navigator.clipboard?.writeText(text);
+      return true;
+    } catch {
+      return false;
     }
   };
 
   const copySelection = async (): Promise<boolean> => {
     const sel = term.getSelection();
+    // 디버그: 선택 길이/내용을 콘솔에 찍어 어디서 끊기는지 보이게.
+    console.log("[clide] copySelection getSelection() =>", JSON.stringify(sel));
     if (!sel) return false;
-    return writeClipboard(sel);
+    const ok = await writeClipboard(sel);
+    console.log("[clide] writeClipboard result =>", ok);
+    return ok;
   };
 
-  // (1) window 단 keydown — 포커스 어디 있든 동작. 단 입력 필드 안 땐 가로채지 않음.
+  // (1) window 단 keydown.
+  // 핵심: xterm 에 선택이 있으면 → 무조건 그걸 복사 (포커스 무관).
+  //       xterm 선택이 없을 때만 입력 필드의 일반 Ctrl+C 로 넘김.
+  // (이전엔 !focusIsEditable() 가드가 먼저라, 입력바가 포커스면
+  //  터미널 선택을 해놓고 Ctrl+C 눌러도 복사가 스킵되는 게 원인이었음.)
   const onKeydown = (e: KeyboardEvent) => {
     const isCopy =
       (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "Insert")) ||
       (e.ctrlKey && e.shiftKey && (e.key === "c" || e.key === "C"));
-    if (isCopy && !focusIsEditable()) {
+    if (isCopy) {
       const sel = term.getSelection();
       if (sel) {
         e.preventDefault();
         void writeClipboard(sel);
+        return;
       }
+      // xterm 선택 없음 → 입력 필드의 일반 Ctrl+C 정상 동작
     }
     if (e.ctrlKey && (e.key === "a" || e.key === "A") && !focusIsEditable()) {
       e.preventDefault();
