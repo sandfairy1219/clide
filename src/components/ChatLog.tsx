@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { ClaudeEvent } from "./types";
 import { MessageBubble } from "./MessageBubble";
 import { CodeCard } from "./CodeCard";
@@ -11,6 +12,12 @@ interface ChatLogProps {
 }
 
 export function ChatLog({ events }: ChatLogProps) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [events]);
+
   return (
     <div className="cl-chat">
       {events.map((ev, i) => {
@@ -129,6 +136,7 @@ export function ChatLog({ events }: ChatLogProps) {
             return null;
         }
       })}
+      <div ref={bottomRef} />
     </div>
   );
 }
