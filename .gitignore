@@ -31,5 +31,5 @@ src-tauri/gen
 # VS Code extension build artifacts
 *.vsix
 
-# Tauri dev cache
-.claude/.tmp-*
+# Claude dev cache / local settings
+.claude/
