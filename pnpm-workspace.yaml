@@ -1,0 +1,3 @@
+strictDepBuilds: false
+allowBuilds:
+  esbuild: true

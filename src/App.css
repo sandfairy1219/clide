@@ -1,0 +1,175 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, "Segoe UI", Avenir, Helvetica, Arial, sans-serif;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #1a1b26;
+  color: #c0caf5;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* 상단 바 */
+.app__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0.42em 0.8em;
+  background: #16161e;
+  border-bottom: 1px solid #2a2b3a;
+  font-size: 13px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.app__title {
+  font-weight: 600;
+  color: #7aa2f7;
+  letter-spacing: 0.2px;
+}
+
+.app__badge {
+  font-size: 11px;
+  color: #9ece6a;
+  background: rgba(158, 206, 106, 0.12);
+  border: 1px solid rgba(158, 206, 106, 0.25);
+  border-radius: 999px;
+  padding: 0.1em 0.6em;
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.app__spacer {
+  flex: 1;
+}
+
+.app__session {
+  color: #565f89;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+
+/* 터미널 영역 */
+.app__terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+  background: #1a1b26;
+  overflow: hidden;
+}
+
+.app__terminal .xterm {
+  height: 100%;
+}
+
+/* 빠른 승인/거부 버튼줄 */
+.app__quick {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+  background: #16161e;
+  border-top: 1px solid #2a2b3a;
+}
+
+.qk {
+  flex: 0 0 auto;
+  border: 1px solid #2a2b3a;
+  background: #1f2335;
+  color: #c0caf5;
+  border-radius: 6px;
+  padding: 0.32em 0.7em;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.05s;
+}
+.qk:hover { background: #2a2e42; }
+.qk:active { transform: translateY(1px); }
+
+.qk--yes   { color: #9ece6a; border-color: rgba(158,206,106,0.35); }
+.qk--yes:hover   { background: rgba(158,206,106,0.14); }
+.qk--no    { color: #f7768e; border-color: rgba(247,118,142,0.35); }
+.qk--no:hover    { background: rgba(247,118,142,0.14); }
+.qk--always{ color: #e0af68; border-color: rgba(224,175,104,0.35); }
+.qk--always:hover{ background: rgba(224,175,104,0.14); }
+.qk--esc   { color: #7aa2f7; border-color: rgba(122,162,247,0.35); }
+.qk--esc:hover   { background: rgba(122,162,247,0.14); }
+.qk--enter { color: #bb9af7; border-color: rgba(187,154,247,0.35); }
+.qk--enter:hover { background: rgba(187,154,247,0.14); }
+
+/* 명령 입력바 */
+.app__input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #16161e;
+  border-top: 1px solid #2a2b3a;
+}
+
+.app__inputprompt {
+  color: #7aa2f7;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-weight: 700;
+}
+
+.app__inputfield {
+  flex: 1;
+  background: #1a1b26;
+  border: 1px solid #2a2b3a;
+  border-radius: 6px;
+  color: #c0caf5;
+  padding: 0.5em 0.7em;
+  font-size: 13px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  outline: none;
+}
+.app__inputfield:focus {
+  border-color: #7aa2f7;
+}
+
+.app__send {
+  border: 1px solid #7aa2f7;
+  background: rgba(122, 162, 247, 0.14);
+  color: #7aa2f7;
+  border-radius: 6px;
+  padding: 0.45em 1em;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.app__send:hover { background: rgba(122, 162, 247, 0.24); }
+
+/* 로딩/에러 알약 — 전체화면 overlay는 Windows "응답없음" 판정을 유발하므로
+   작게 띄우고 클릭을 가로채지 않는다 (pointer-events:none). */
+.app__overlay {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.5em 1em;
+  background: rgba(22, 22, 30, 0.92);
+  border: 1px solid #2a2b3a;
+  border-radius: 999px;
+  color: #565f89;
+  font-size: 13px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  z-index: 50;
+  pointer-events: none;
+  max-width: 90vw;
+  text-align: center;
+}
+
+.app__overlay--err {
+  color: #f7768e;
+  border-color: #f7768e;
+}
