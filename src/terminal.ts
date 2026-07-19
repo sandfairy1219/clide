@@ -9,8 +9,8 @@ import "@xterm/xterm/css/xterm.css";
 export interface TerminalHandle {
   term: Terminal;
   fit: FitAddon;
-  /** PTY에 키스트로크를 직접 전송 (크롬 버튼/입력바용). */
-  send: (data: string) => void;
+  /** user 텍스트를 stream-json NDJSON(user 메시지)으로 감싸 PTY stdin에 전송. */
+  send: (text: string) => void;
   dispose: () => void;
 }
 
@@ -39,21 +39,38 @@ function waitForInternals(timeoutMs = 5000): Promise<void> {
   });
 }
 
-/** 세션 하나에 대한 xterm 터미널을 열고 PTY 입출력을 묶어준다. */
+/** user 텍스트 한 줄을 stream-json user 메시지 NDJSON으로 감싼다. */
+function wrapUserNdjson(text: string): string {
+  const msg = {
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "text", text }],
+    },
+  };
+  return JSON.stringify(msg) + "\n";
+}
+
+/**
+ * 세션 하나에 대한 xterm 터미널을 열고 PTY 입출력을 묶어준다.
+ * stream-json 모드 — xterm은 "파이프 테스트용 raw NDJSON 로그 뷰"로 쓴다.
+ *   - claude 가 뱉은 JSON 한 줄 → claude-event → xterm 에 JSON 그대로 찍음
+ *   - 비-JSON 라인(ocgo stderr 노이즈 등) → pty-log → 회색으로 찍음
+ *   - user 입력: xterm 키스트로크 ❌ (stream-json stdin 이 raw 거부),
+ *     상위 입력바에서 send(text) 로 NDJSON 전송
+ */
 export async function attachTerminal(
   container: HTMLElement,
   session: string,
 ): Promise<TerminalHandle> {
-  // internals 가 없으면 listen()이 즉시 throw → 여기서 먼저 검증
   await waitForInternals();
 
   const term = new Terminal({
-    // xterm v6: rendererType 옵션 삭제됨. webgl/canvas addon 안 넣으면
-    // DOM 렌더러가 기본 → WebView2에서 main thread 잡아먹는 문제 없음.
     fontFamily: "'Cascadia Code', 'JetBrains Mono', Consolas, monospace",
-    fontSize: 14,
-    lineHeight: 1.2,
-    cursorBlink: true,
+    fontSize: 13,
+    lineHeight: 1.25,
+    cursorBlink: false,
+    disableStdin: true, // raw keystroke 안 보냄 — stream-json stdin 전용
     allowProposedApi: true,
   });
   const fit = new FitAddon();
@@ -62,8 +79,9 @@ export async function attachTerminal(
   term.open(container);
   fit.fit();
 
-  const send = (data: string) => {
-    invoke("pty_write", { session, data }).catch(() => {});
+  // stream-json user 메시지 래핑 전송
+  const send = (text: string) => {
+    invoke("pty_write", { session, data: wrapUserNdjson(text) }).catch(() => {});
   };
 
   const initial = fit.proposeDimensions();
@@ -75,27 +93,42 @@ export async function attachTerminal(
     }).catch((e) => term.writeln(`\x1b[31m[spawn error] ${e}\x1b[0m`));
   }
 
-  const unlistenData: UnlistenFn = await listen<{ session: string; data: string }>(
-    "pty-data",
-    (e) => {
-      if (e.payload.session === session) term.write(e.payload.data);
-    },
-  );
-  const unlistenExit: UnlistenFn = await listen<{ session: string; exit_code: number | null }>(
-    "pty-exit",
-    (e) => {
-      if (e.payload.session === session)
-        term.writeln(`\x1b[33m[claude exited · code ${e.payload.exit_code}]\x1b[0m`);
-    },
-  );
-
-  term.onData(send);
-  term.onResize((dims) => {
-    invoke("pty_resize", { session, cols: dims.cols, rows: dims.rows }).catch(() => {});
+  // claude 가 뱉은 JSON 라인 → xterm 에 그대로 출력
+  const unlistenEvent: UnlistenFn = await listen<{
+    session: string;
+    event: unknown;
+  }>("claude-event", (e) => {
+    if (e.payload.session === session) {
+      term.writeln(JSON.stringify(e.payload.event));
+    }
   });
 
-  // ResizeObserver 루프 방지: fit이 서로를 트리거해 메인 스레드를
-  // 잡아먹지 않도록 rAF로 합치고 재진입 가드.
+  // 비-JSON 라인(ocgo "No OCGO model mappings..." 등) → 회색
+  const unlistenLog: UnlistenFn = await listen<{ session: string; data: string }>(
+    "pty-log",
+    (e) => {
+      if (e.payload.session === session)
+        term.writeln(`\x1b[2m${e.payload.data}\x1b[0m`);
+    },
+  );
+
+  const unlistenExit: UnlistenFn = await listen<{
+    session: string;
+    exit_code: number | null;
+  }>("pty-exit", (e) => {
+    if (e.payload.session === session)
+      term.writeln(
+        `\x1b[33m[claude exited · code ${e.payload.exit_code}]\x1b[0m`,
+      );
+  });
+
+  term.onResize((dims) => {
+    invoke("pty_resize", { session, cols: dims.cols, rows: dims.rows }).catch(
+      () => {},
+    );
+  });
+
+  // ResizeObserver 루프 방지.
   let fitting = false;
   let pending = false;
   const safeFit = () => {
@@ -126,7 +159,8 @@ export async function attachTerminal(
     send,
     dispose: () => {
       ro.disconnect();
-      unlistenData();
+      unlistenEvent();
+      unlistenLog();
       unlistenExit();
       invoke("pty_kill", { session }).catch(() => {});
       term.dispose();

@@ -41,6 +41,10 @@ function App() {
     };
   }, []);
 
+  // send: user 텍스트를 stream-json user 메시지(NDJSON)로 PTY stdin에 전송.
+  // stream-json 모드에선 빠른 승인(y/n/a) 키스트로크가 의미 없음 —
+  // 권한은 백엔드 --yes 로 자동 승인되고, permission_request 이벤트가 안 옴.
+  // 입력은 오직 이 입력바를 통해서만.
   const send = (s: string) => {
     const h = handleRef.current;
     if (!h) return;
@@ -48,14 +52,11 @@ function App() {
     h.term.focus();
   };
 
-  // 빠른 승인/거부/항상허용 — Claude Code 권한 프롬프트 키스트로크.
-  // 승인=y, 거부=n, 항상=a, 취소/인터럽트=Esc, 엔터=Enter
-  const quickSend = (key: string) => () => send(key);
-
   const submitCmd = (e: React.FormEvent) => {
     e.preventDefault();
     if (!cmd) return;
-    send(cmd.endsWith("\n") ? cmd : cmd + "\n");
+    // send() 가 NDJSON user 메시지로 감싸 \n 까지 붙여주므로 텍스트만 전달.
+    send(cmd);
     setCmd("");
   };
 
@@ -77,21 +78,13 @@ function App() {
         aria-label="terminal"
       />
 
-      <div className="app__quick">
-        <button type="button" className="qk qk--yes" onClick={quickSend("y")} title="승인 (y)">✅ 승인</button>
-        <button type="button" className="qk qk--no"  onClick={quickSend("n")} title="거부 (n)">❌ 거부</button>
-        <button type="button" className="qk qk--always" onClick={quickSend("a")} title="항상 허용 (a)">⭐ 항상</button>
-        <button type="button" className="qk qk--esc" onClick={quickSend("\x1b")} title="취소 (Esc)">⏹ Esc</button>
-        <button type="button" className="qk qk--enter" onClick={quickSend("\r")} title="엔터 (Enter)">↵ Enter</button>
-      </div>
-
       <form className="app__input" onSubmit={submitCmd}>
         <span className="app__inputprompt">〉</span>
         <input
           className="app__inputfield"
           value={cmd}
           onChange={(e) => setCmd(e.target.value)}
-          placeholder="메시지 또는 // 커맨드 입력 — Enter로 전송"
+          placeholder="메시지 입력 — Enter로 stream-json 전송"
           spellCheck={false}
           autoComplete="off"
         />
