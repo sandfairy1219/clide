@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import "@xterm/xterm/css/xterm.css";
 
@@ -89,15 +90,46 @@ export async function attachTerminal(
   // disableStdin:true 라 xterm helper textarea 가 포커스를 안 받아서
   // 컨테이너 keydown 은 안 터짐 → window 단에서 잡고(포커스 무관),
   // 우클릭=복사, 그리고 외부 복사 버튼까지 3중으로 둔다.
+  // navigator.clipboard 가 WebView2 에서 조용히 실패할 수 있어서,
+  // 실패하면 execCommand('copy') 폴백(임시 textarea)으로 복사한다.
+  // writeClipboard — 3단계 폴백. 가장 위쪽이 WebView2 우회 경로.
+  // (1) Tauri clipboard-manager 플러그인: JS 바인딩 → Rust → OS 클립보드.
+  //     navigator.clipboard 가 WebView2 에서 secure-context/user-gesture 로
+  //     조용히 실패하는 문제를 아예 우회한다.
+  // (2) navigator.clipboard (웹 표준).
+  // (3) execCommand('copy') 임시 textarea 폴백 (user-gesture 없이도 동작).
+  const writeClipboard = async (text: string): Promise<boolean> => {
+    try {
+      await writeText(text); // Tauri 플러그인 (Rust → OS)
+      return true;
+    } catch {
+      try {
+        await navigator.clipboard?.writeText(text);
+        return true;
+      } catch {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          ta.style.left = "-9999px";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand("copy");
+          document.body.removeChild(ta);
+          return ok;
+        } catch {
+          return false;
+        }
+      }
+    }
+  };
+
   const copySelection = async (): Promise<boolean> => {
     const sel = term.getSelection();
     if (!sel) return false;
-    try {
-      await navigator.clipboard?.writeText(sel);
-      return true;
-    } catch {
-      return false;
-    }
+    return writeClipboard(sel);
   };
 
   // (1) window 단 keydown — 포커스 어디 있든 동작. 단 입력 필드 안 땐 가로채지 않음.
@@ -109,7 +141,7 @@ export async function attachTerminal(
       const sel = term.getSelection();
       if (sel) {
         e.preventDefault();
-        navigator.clipboard?.writeText(sel).catch(() => {});
+        void writeClipboard(sel);
       }
     }
     if (e.ctrlKey && (e.key === "a" || e.key === "A") && !focusIsEditable()) {
@@ -124,7 +156,7 @@ export async function attachTerminal(
     const sel = term.getSelection();
     if (sel) {
       e.preventDefault();
-      navigator.clipboard?.writeText(sel).catch(() => {});
+      void writeClipboard(sel);
     }
   };
   container.addEventListener("contextmenu", onContextmenu);
