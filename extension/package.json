@@ -1,0 +1,62 @@
+{
+  "name": "clide-vscode",
+  "displayName": "Clide",
+  "description": "Claude Code assistant inside VS Code",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "sandfairy",
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Chat",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "clide.open",
+        "title": "Clide: Open Claude Chat",
+        "icon": "resources/clide.svg"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "clide.open",
+          "group": "navigation"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "clide",
+          "title": "Clide",
+          "icon": "resources/clide.svg"
+        }
+      ]
+    },
+    "views": {
+      "clide": [
+        {
+          "type": "webview",
+          "id": "clide.chat",
+          "name": "Claude Chat"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/vscode": "^1.96.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.25.12"
+  }
+}
