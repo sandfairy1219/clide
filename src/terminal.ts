@@ -1,7 +1,6 @@
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -12,6 +11,8 @@ export interface TerminalHandle {
   fit: FitAddon;
   /** user 텍스트를 stream-json NDJSON(user 메시지)으로 감싸 PTY stdin에 전송. */
   send: (text: string) => void;
+  /** 현재 xterm 선택 영역을 클립보드로 복사 (선택 없으면 no-op). */
+  copySelection: () => Promise<boolean>;
   dispose: () => void;
 }
 
@@ -42,23 +43,27 @@ function waitForInternals(timeoutMs = 5000): Promise<void> {
 
 /** user 텍스트 한 줄을 stream-json user 메시지 NDJSON으로 감싼다. */
 function wrapUserNdjson(text: string): string {
-  const msg = {
-    type: "user",
-    message: {
-      role: "user",
-      content: [{ type: "text", text }],
-    },
-  };
-  return JSON.stringify(msg) + "\n";
+  return (
+    JSON.stringify({
+      type: "user",
+      message: { role: "user", content: [{ type: "text", text }] },
+    }) + "\n"
+  );
+}
+
+/** 포커스가 (편집 가능한) 입력 요소에 있는지 — 거기선 복사 단축키를 가로채면 안 됨. */
+function focusIsEditable(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (el.isContentEditable) return true;
+  return false;
 }
 
 /**
  * 세션 하나에 대한 xterm 터미널을 열고 PTY 입출력을 묶어준다.
  * stream-json 모드 — xterm은 "파이프 테스트용 raw NDJSON 로그 뷰"로 쓴다.
- *   - claude 가 뱉은 JSON 한 줄 → claude-event → xterm 에 JSON 그대로 찍음
- *   - 비-JSON 라인(ocgo stderr 노이즈 등) → pty-log → 회색으로 찍음
- *   - user 입력: xterm 키스트로크 ❌ (stream-json stdin 이 raw 거부),
- *     상위 입력바에서 send(text) 로 NDJSON 전송
  */
 export async function attachTerminal(
   container: HTMLElement,
@@ -77,39 +82,52 @@ export async function attachTerminal(
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.loadAddon(new WebLinksAddon());
-  // 클립보드 복사: 선택 텍스트를 OS 클립보드로 write 해주는 addon.
-  // disableStdin:true 라 키보드 입력은 막혀있으므로, 아래 keydown 핸들러로
-  // Ctrl+C 를 따로 잡아 선택 텍스트를 복사한다.
-  term.loadAddon(new ClipboardAddon());
   term.open(container);
   fit.fit();
 
-  // --- 복사 처리 ---
-  // disableStdin 모드라 term.onData 가 안 오고, 일반 Ctrl+C 도 인터럽트로
-  // 빠져버리므로 컨테이너 단에서 keydown 을 잡아 직접 복사한다.
+  // --- 클립보드 복사 ---
+  // disableStdin:true 라 xterm helper textarea 가 포커스를 안 받아서
+  // 컨테이너 keydown 은 안 터짐 → window 단에서 잡고(포커스 무관),
+  // 우클릭=복사, 그리고 외부 복사 버튼까지 3중으로 둔다.
+  const copySelection = async (): Promise<boolean> => {
+    const sel = term.getSelection();
+    if (!sel) return false;
+    try {
+      await navigator.clipboard?.writeText(sel);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // (1) window 단 keydown — 포커스 어디 있든 동작. 단 입력 필드 안 땐 가로채지 않음.
   const onKeydown = (e: KeyboardEvent) => {
-    // Ctrl+C / Ctrl+Insert: 선택 영역 있으면 클립보드로 복사.
-    if ((e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "Insert"))
-        || (e.ctrlKey && e.shiftKey && (e.key === "c" || e.key === "C"))) {
+    const isCopy =
+      (e.ctrlKey && (e.key === "c" || e.key === "C" || e.key === "Insert")) ||
+      (e.ctrlKey && e.shiftKey && (e.key === "c" || e.key === "C"));
+    if (isCopy && !focusIsEditable()) {
       const sel = term.getSelection();
       if (sel) {
         e.preventDefault();
         navigator.clipboard?.writeText(sel).catch(() => {});
       }
     }
-    // Ctrl+A: 전체 선택.
-    if (e.ctrlKey && (e.key === "a" || e.key === "A")) {
+    if (e.ctrlKey && (e.key === "a" || e.key === "A") && !focusIsEditable()) {
       e.preventDefault();
       term.selectAll();
     }
   };
-  container.addEventListener("keydown", onKeydown);
+  window.addEventListener("keydown", onKeydown, true);
 
-  // 컨테이너가 포커스를 받을 수 있게 (keydown 리스너가 동작하려면 필요).
-  // tabindex 가 없으면 div 는 포커스를 안 받는다.
-  if (!container.hasAttribute("tabindex")) {
-    container.setAttribute("tabindex", "0");
-  }
+  // (2) 우클릭 = 선택 영역 복사 (터미널 콘솔 감성 + 컨텍스트메뉴 방지).
+  const onContextmenu = (e: MouseEvent) => {
+    const sel = term.getSelection();
+    if (sel) {
+      e.preventDefault();
+      navigator.clipboard?.writeText(sel).catch(() => {});
+    }
+  };
+  container.addEventListener("contextmenu", onContextmenu);
 
   // stream-json user 메시지 래핑 전송
   const send = (text: string) => {
@@ -189,9 +207,11 @@ export async function attachTerminal(
     term,
     fit,
     send,
+    copySelection,
     dispose: () => {
       ro.disconnect();
-      container.removeEventListener("keydown", onKeydown);
+      window.removeEventListener("keydown", onKeydown, true);
+      container.removeEventListener("contextmenu", onContextmenu);
       unlistenEvent();
       unlistenLog();
       unlistenExit();
